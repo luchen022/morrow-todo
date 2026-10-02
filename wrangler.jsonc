@@ -4,9 +4,6 @@
   "main": "worker/index.ts",
   "compatibility_date": "2026-10-02",
   "compatibility_flags": ["nodejs_compat"],
-  "secrets": {
-    "required": ["APP_PASSWORD", "SESSION_SECRET", "RESEND_API_KEY"]
-  },
   "assets": {
     "directory": "./dist",
     "binding": "ASSETS",
@@ -17,7 +14,6 @@
     {
       "binding": "DB",
       "database_name": "morrow-db",
-      "database_id": "replace-with-your-d1-database-id",
       "migrations_dir": "migrations"
     }
   ],

@@ -22,14 +22,19 @@ Morrow 是一款面向个人使用的开源任务管理工具，灵感来自 Vik
 
 ## 部署到 Cloudflare
 
-1. 创建 D1：`pnpm wrangler d1 create morrow-db`
-2. 把返回的 `database_id` 写入 `wrangler.jsonc`
-3. 设置密钥：`pnpm wrangler secret put APP_PASSWORD`、`pnpm wrangler secret put SESSION_SECRET` 和 `pnpm wrangler secret put RESEND_API_KEY`
-4. 应用迁移：`pnpm db:migrate:remote`
-5. 在 Resend 控制台创建 API Key 并验证发件域名
-6. 部署：`pnpm deploy`
+1. 在 Workers 和 Pages 中导入 GitHub 仓库，Worker 名称使用 `morrow-todo`，生产分支选择 `main`，根目录使用仓库根目录。
+2. 构建命令留空，部署命令填写 `pnpm deploy`。关闭非生产分支的预览构建。
+3. 首次部署先发布应用。此时尚未连接数据库，页面接口会提示完成配置。
+4. 在 D1 页面创建数据库（建议名称 `morrow-db`），然后进入 Worker → Bindings → Add binding → D1，变量名填写 **`DB`**，从列表中选择数据库。
+5. 在 Worker → Settings → Variables and Secrets 中添加三个 **Secret**：`APP_PASSWORD`（登录密码）、`SESSION_SECRET`（至少 32 位随机字符串）、`RESEND_API_KEY`（Resend 密钥）。这些是运行时密钥，不是 Build secrets。
+6. 重新运行最新构建。部署脚本读取网页上选定的 `DB` 绑定，自动执行数据库迁移，然后部署应用。无需将数据库 ID 写入源码。
+7. 在 Resend 控制台验证发件域名。首次登录后在应用设置中填写收件邮箱和发件地址，发送测试邮件。
 
-首次登录后，在设置中填写收件邮箱与使用已验证域名的发件地址，然后发送测试邮件。`RESEND_API_KEY` 只能通过 Worker Secret 或本地 `.dev.vars` 提供，不能写入源码。
+Workers Builds 的构建环境需要提供 `CLOUDFLARE_ACCOUNT_ID` 和 `CLOUDFLARE_API_TOKEN`。若构建日志提示缺少它们，请在 **Build variables and secrets** 中分别添加账号 ID 和部署 Token（Secret）。部署 Token 需要 Workers Scripts 读取/编辑权限和 D1 编辑权限；Cloudflare 自动生成的构建 Token 如果没有 D1 权限，需要在 API Tokens 页面补充。无需提供这些值给仓库维护者。
+
+后续推送 `main` 时会自动迁移和部署。脚本每次读取最新的网页绑定；读取失败会停止发布，避免误删数据库绑定。仓库中的 `wrangler.jsonc` 的 D1 配置仅用于本地开发，生产请使用 `pnpm deploy`，不要直接运行 `wrangler deploy`。部署时产生的临时配置会自动删除并已被 Git 忽略。
+
+`RESEND_API_KEY` 只能通过 Worker Secret 或本地 `.dev.vars` 提供，不能写入源码。
 
 ## 安全说明
 

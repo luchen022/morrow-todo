@@ -1,5 +1,6 @@
 node_modules/
 .pnpm-store/
+.wrangler.deploy.json
 dist/
 .wrangler/
 .dev.vars

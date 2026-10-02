@@ -584,7 +584,10 @@ export default {
   async fetch(request, env): Promise<Response> {
     try {
       const url = new URL(request.url);
-      if (url.pathname.startsWith("/api/")) return await api(request, env);
+      if (url.pathname.startsWith("/api/")) {
+        if (!env.DB) return error("请在 Cloudflare Worker 的 Bindings 页面添加名为 DB 的 D1 数据库，然后重新运行部署", 503);
+        return await api(request, env);
+      }
       return env.ASSETS.fetch(request);
     } catch (cause) {
       console.error(JSON.stringify({ message: "request failed", path: new URL(request.url).pathname, error: cause instanceof Error ? cause.message : String(cause) }));
@@ -593,6 +596,6 @@ export default {
   },
 
   async scheduled(_controller, env, ctx): Promise<void> {
-    ctx.waitUntil(processReminders(env));
+    if (env.DB && env.APP_PASSWORD && env.SESSION_SECRET) ctx.waitUntil(processReminders(env));
   }
 } satisfies ExportedHandler<Env>;
