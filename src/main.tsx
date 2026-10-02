@@ -25,6 +25,7 @@ import {
   X
 } from "lucide-react";
 import "./styles.css";
+import CalendarView from "./CalendarView";
 
 type Project = {
   id: string;
@@ -80,7 +81,7 @@ type Bootstrap = {
   settings: SettingsMap;
 };
 
-type View = "inbox" | "today" | "upcoming" | "completed" | `project:${string}`;
+type View = "inbox" | "today" | "upcoming" | "completed" | "calendar" | `project:${string}`;
 type UndoResult = { undoToken: string; expiresAt: number };
 
 const priorityLabels = ["无", "低", "中", "高", "紧急"];
@@ -581,6 +582,7 @@ function App() {
   }, [data, view, search]);
 
   const viewInfo = useMemo(() => {
+    if (view === "calendar") return { eyebrow: "SCHEDULE", title: "日历", subtitle: "把截止日期放在一起，为忙碌的日子留出余地。" };
     if (view === "today") return { eyebrow: new Date().toLocaleDateString("zh-CN", { month: "long", day: "numeric", weekday: "long" }), title: "今天", subtitle: "只看此刻需要在意的事。" };
     if (view === "upcoming") return { eyebrow: "NEXT 7 DAYS", title: "即将到期", subtitle: "看看未来一周，给重要的事留出空间。" };
     if (view === "completed") return { eyebrow: "ARCHIVE", title: "已完成", subtitle: "这些事情已经妥善落地。" };
@@ -667,6 +669,7 @@ function App() {
           <button className={view === "inbox" ? "active" : ""} onClick={() => changeView("inbox")}><Inbox size={18} /><span>收件箱</span><em>{openCount("inbox")}</em></button>
           <button className={view === "today" ? "active" : ""} onClick={() => changeView("today")}><Sparkles size={18} /><span>今天</span></button>
           <button className={view === "upcoming" ? "active" : ""} onClick={() => changeView("upcoming")}><CalendarDays size={18} /><span>即将到期</span></button>
+          <button className={view === "calendar" ? "active" : ""} onClick={() => changeView("calendar")}><CalendarDays size={18} /><span>日历</span></button>
           <button className={view === "completed" ? "active" : ""} onClick={() => changeView("completed")}><CheckCircle2 size={18} /><span>已完成</span></button>
         </nav>
         <div className="nav-heading"><span>项目</span><button onClick={() => setProjectOpen(true)} aria-label="新建项目"><Plus size={17} /></button></div>
@@ -705,13 +708,13 @@ function App() {
           </div>
         </header>
 
-        <div className="content-wrap">
+        <div className={`content-wrap ${view === "calendar" ? "calendar-content" : ""}`}>
           <section className="view-header">
             <div><p className="eyebrow">{viewInfo.eyebrow}</p><h1>{viewInfo.title}</h1><p>{viewInfo.subtitle}</p></div>
-            <button className="filter-button"><SlidersHorizontal size={17} />筛选<ChevronDown size={15} /></button>
+            {view !== "calendar" && <button className="filter-button"><SlidersHorizontal size={17} />筛选<ChevronDown size={15} /></button>}
           </section>
 
-          {view !== "completed" && (
+          {view !== "completed" && view !== "calendar" && (
             <form className="quick-add" onSubmit={quickAdd}>
               <Circle size={20} />
               <input ref={quickRef} value={quickTitle} onChange={(event) => setQuickTitle(event.target.value)} placeholder="快速添加任务，然后按回车" />
@@ -719,7 +722,7 @@ function App() {
             </form>
           )}
 
-          <section className="task-section">
+          {view === "calendar" ? <CalendarView tasks={data.tasks} projects={data.projects} timeZone={data.settings.timezone} search={search} onEdit={(id) => setEditorTask(data.tasks.find((task) => task.id === id))} onToggle={(id) => { const task = data.tasks.find((item) => item.id === id); if (task) void toggleTask(task); }} /> : <section className="task-section">
             <div className="section-label"><span>{view === "completed" ? "完成记录" : "任务"}</span><em>{visibleTasks.length}</em></div>
             <div className="task-list">
               {visibleTasks.length ? visibleTasks.map((task) => (
@@ -733,7 +736,7 @@ function App() {
                 </div>
               )}
             </div>
-          </section>
+          </section>}
         </div>
       </main>
 
