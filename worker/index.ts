@@ -591,6 +591,9 @@ export default {
       return env.ASSETS.fetch(request);
     } catch (cause) {
       console.error(JSON.stringify({ message: "request failed", path: new URL(request.url).pathname, error: cause instanceof Error ? cause.message : String(cause) }));
+      if (cause instanceof Error && /no such table:/i.test(cause.message)) {
+        return error("数据库尚未初始化。请在绑定 D1 后重新运行 Cloudflare 最新构建，完成数据库初始化", 503);
+      }
       return error("服务器暂时无法处理请求", 500);
     }
   },

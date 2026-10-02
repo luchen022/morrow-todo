@@ -93,6 +93,7 @@ const recurrenceLabels: Record<string, string> = {
 async function api<T>(path: string, options?: RequestInit): Promise<T> {
   const response = await fetch(path, {
     ...options,
+    signal: options?.signal ?? AbortSignal.timeout(20_000),
     headers: options?.body ? { "Content-Type": "application/json", ...options.headers } : options?.headers
   });
   const body = (await response.json().catch(() => ({}))) as { error?: string } & T;
@@ -444,6 +445,7 @@ function TaskRow({ task, isSubtask, onToggle, onEdit }: { task: Task; isSubtask:
 function App() {
   const [authState, setAuthState] = useState<"loading" | "authenticated" | "guest">("loading");
   const [data, setData] = useState<Bootstrap | null>(null);
+  const [loadError, setLoadError] = useState("");
   const [view, setView] = useState<View>("today");
   const [search, setSearch] = useState("");
   const [quickTitle, setQuickTitle] = useState("");
@@ -461,8 +463,16 @@ function App() {
   }
 
   async function refresh() {
-    const next = await api<Bootstrap>("/api/bootstrap");
-    setData(next);
+    setLoadError("");
+    try {
+      const next = await api<Bootstrap>("/api/bootstrap");
+      setData(next);
+    } catch (cause) {
+      setLoadError(cause instanceof Error && cause.name === "TimeoutError"
+        ? "获取任务超时，请检查网络后重试"
+        : cause instanceof Error ? cause.message : "任务加载失败，请重试");
+      throw cause;
+    }
   }
 
   useEffect(() => { checkAuth().catch(() => setAuthState("guest")); }, []);
@@ -533,6 +543,7 @@ function App() {
   async function logout() {
     await api("/api/auth/logout", { method: "POST" });
     setData(null);
+    setLoadError("");
     setAuthState("guest");
   }
 
@@ -543,7 +554,15 @@ function App() {
 
   if (authState === "loading") return <div className="app-loader"><div className="brand-mark"><Check size={24} /></div><span>正在准备今天…</span></div>;
   if (authState === "guest") return <Login onLogin={() => setAuthState("authenticated")} />;
-  if (!data) return <div className="app-loader"><div className="brand-mark"><Check size={24} /></div><span>正在取回任务…</span></div>;
+  if (!data) return <div className="app-loader">
+    <div className="brand-mark"><Check size={24} /></div>
+    <span>{loadError ? "暂时无法加载任务" : "正在取回任务…"}</span>
+    {loadError && <>
+      <p className="form-error" role="alert">{loadError}</p>
+      <button className="primary-button" onClick={() => refresh().catch(() => {})}>重新获取</button>
+      <button onClick={() => logout().catch(() => setAuthState("guest"))}>返回登录</button>
+    </>}
+  </div>;
 
   const unread = data.notifications.filter((item) => !item.read_at).length;
   const openCount = (projectId: string) => data.tasks.filter((task) => task.projectId === projectId && task.status === "open").length;
