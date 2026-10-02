@@ -1,4 +1,5 @@
 import { Resend } from "resend";
+import { MAX_BACKUP_BYTES, backupCounts, exportBackup, readBackup, restoreBackup, validateBackup } from "./backup";
 
 type JsonValue = string | number | boolean | null | JsonValue[] | { [key: string]: JsonValue };
 
@@ -559,6 +560,23 @@ async function api(request: Request, env: Env): Promise<Response> {
   if (!["GET", "HEAD"].includes(request.method) && !assertSameOrigin(request)) return error("请求来源无效", 403);
 
   if (path === "/api/bootstrap" && request.method === "GET") return bootstrap(env);
+  if (path === "/api/backup" && request.method === "GET") {
+    const backup = await exportBackup(env.DB);
+    try { validateBackup(backup); } catch (cause) { return error(cause instanceof Error ? cause.message : "无法生成备份"); }
+    const content = JSON.stringify(backup);
+    if (new TextEncoder().encode(content).byteLength > MAX_BACKUP_BYTES) return error("当前数据超过 2 MB 备份上限");
+    return new Response(content, { headers: { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store", "Content-Disposition": `attachment; filename="morrow-backup-${new Date().toISOString().slice(0, 10)}.json"` } });
+  }
+  if (["/api/backup/validate", "/api/backup/restore"].includes(path) && request.method === "POST") {
+    let backup;
+    try { backup = validateBackup(await readBackup(request)); }
+    catch (cause) { return error(cause instanceof Error ? cause.message : "备份无效"); }
+    if (path.endsWith("/restore")) {
+      if (request.headers.get("X-Morrow-Restore") !== "replace") return error("请先确认替换当前数据");
+      await restoreBackup(env.DB, backup);
+    }
+    return json({ ok: true, exportedAt: backup.exportedAt, ...backupCounts(backup) });
+  }
   if (path === "/api/projects" && request.method === "POST") return createProject(request, env);
   if (path.startsWith("/api/projects/")) {
     const id = decodeURIComponent(path.slice("/api/projects/".length));

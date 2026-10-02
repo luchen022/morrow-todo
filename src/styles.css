@@ -156,6 +156,9 @@ nav button em { font-size: 11px; font-style: normal; color: #8e9995; }
 .settings-section { padding: 0 0 23px; margin-bottom: 23px; border-bottom: 1px solid #ebe8e0; }
 .settings-section:last-of-type { border-bottom: 0; }
 .settings-section h3 { font-size: 14px; margin: 0 0 15px; }
+.settings-section > .secondary-button { margin-bottom: 18px; }
+.restore-confirm { display: flex; align-items: flex-start; gap: 9px; margin: 16px 0 10px; font-size: 13px; line-height: 1.6; }
+.restore-confirm input { margin-top: 4px; accent-color: var(--forest); }
 .setting-switch-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 18px; }
 .setting-switch-row h3 { margin: 0 0 4px; }
 .setting-switch-row p { margin: 0; color: var(--muted); font-size: 12px; }

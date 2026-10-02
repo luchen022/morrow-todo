@@ -330,10 +330,15 @@ function TaskEditor({
   );
 }
 
-function SettingsDialog({ settings, onClose, onSaved }: { settings: SettingsMap; onClose: () => void; onSaved: () => void }) {
+function SettingsDialog({ settings, onClose, onSaved }: { settings: SettingsMap; onClose: () => void; onSaved: (message?: string) => void }) {
   const [values, setValues] = useState(settings);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
+  const [backupMessage, setBackupMessage] = useState("");
+  const [backupBusy, setBackupBusy] = useState(false);
+  const [backupFile, setBackupFile] = useState<string | null>(null);
+  const [backupPreview, setBackupPreview] = useState<{ exportedAt: string; projects: number; tasks: number; tags: number; notifications: number } | null>(null);
+  const [restoreConfirmed, setRestoreConfirmed] = useState(false);
   const set = (key: keyof SettingsMap, value: string) => setValues((current) => ({ ...current, [key]: value }));
 
   async function save(event: FormEvent) {
@@ -367,6 +372,56 @@ function SettingsDialog({ settings, onClose, onSaved }: { settings: SettingsMap;
     }
   }
 
+  async function downloadBackup() {
+    const backup = await api<unknown>("/api/backup", { signal: AbortSignal.timeout(60_000) });
+    const url = URL.createObjectURL(new Blob([JSON.stringify(backup)], { type: "application/json" }));
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `morrow-backup-${new Date().toISOString().replaceAll(":", "-")}.json`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
+
+  async function exportData() {
+    setBackupBusy(true);
+    setBackupMessage("");
+    try { await downloadBackup(); setBackupMessage("备份已生成，请确认下载文件已保存。"); }
+    catch (cause) { setBackupMessage(cause instanceof Error ? cause.message : "备份失败"); }
+    finally { setBackupBusy(false); }
+  }
+
+  async function chooseBackup(file?: File) {
+    setBackupFile(null);
+    setBackupPreview(null);
+    setRestoreConfirmed(false);
+    setBackupMessage("");
+    if (!file) return;
+    setBackupBusy(true);
+    try {
+      if (file.size > 2 * 1024 * 1024) throw new Error("备份文件不能超过 2 MB");
+      const content = await file.text();
+      const preview = await api<NonNullable<typeof backupPreview>>("/api/backup/validate", { method: "POST", body: content });
+      setBackupFile(content);
+      setBackupPreview(preview);
+    } catch (cause) { setBackupMessage(cause instanceof Error ? cause.message : "无法读取备份"); }
+    finally { setBackupBusy(false); }
+  }
+
+  async function restoreData() {
+    if (!backupFile || !restoreConfirmed) return;
+    setBackupBusy(true);
+    setBackupMessage("");
+    try {
+      // Download current data before replacing it, so the user can recover.
+      await downloadBackup();
+      await api("/api/backup/restore", { method: "POST", body: backupFile, headers: { "X-Morrow-Restore": "replace" }, signal: AbortSignal.timeout(60_000) });
+      onSaved("备份已恢复");
+    } catch (cause) { setBackupMessage(cause instanceof Error ? cause.message : "恢复失败"); }
+    finally { setBackupBusy(false); }
+  }
+
   return (
     <div className="modal-backdrop" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
       <section className="modal-panel settings-panel" role="dialog" aria-modal="true">
@@ -389,8 +444,21 @@ function SettingsDialog({ settings, onClose, onSaved }: { settings: SettingsMap;
             <p className="field-hint">发件域名需先在 Resend 中完成验证，API 密钥保存在 Worker Secret 中。</p>
             <button type="button" className="secondary-button" onClick={testEmail} disabled={busy}>发送测试邮件</button>
           </div>
+          <div className="settings-section">
+            <h3>备份与恢复</h3>
+            <p className="field-hint">备份包含项目、任务、子任务、标签、通知和已保存的设置。登录密码与邮件密钥不包含在内。支持最大 2 MB、5000 条记录的完整备份。</p>
+            <button type="button" className="secondary-button" disabled={backupBusy || busy} onClick={exportData}>{backupBusy ? "正在处理…" : "下载完整备份"}</button>
+            <label className="field"><span>选择要恢复的备份</span><input type="file" accept=".json,application/json" disabled={backupBusy || busy} onChange={(event) => { const file = event.target.files?.[0]; event.target.value = ""; void chooseBackup(file); }} /></label>
+            {backupPreview && <div>
+              <p className="field-hint">备份时间：{new Date(backupPreview.exportedAt).toLocaleString("zh-CN")}<br />{backupPreview.projects} 个项目 · {backupPreview.tasks} 个任务 · {backupPreview.tags} 个标签 · {backupPreview.notifications} 条通知</p>
+              <p className="field-hint">恢复会替换当前全部数据和设置，包括邮件提醒设置。恢复前会先下载一份当前数据的备份，请保留该文件。</p>
+              <label className="restore-confirm"><input type="checkbox" checked={restoreConfirmed} onChange={(event) => setRestoreConfirmed(event.target.checked)} disabled={backupBusy} />我确认用此备份替换当前数据</label>
+              <button type="button" className="danger-button" disabled={!restoreConfirmed || backupBusy || busy} onClick={restoreData}>恢复并替换当前数据</button>
+            </div>}
+            {backupMessage && <p className="field-hint" role="status">{backupMessage}</p>}
+          </div>
           {message && <p className={message.includes("已发送") ? "success-message" : "form-error"}>{message}</p>}
-          <footer className="modal-actions"><span /><div><button type="button" className="text-button" onClick={onClose}>取消</button><button className="primary-button" disabled={busy}>{busy ? "保存中…" : "保存设置"}</button></div></footer>
+          <footer className="modal-actions"><span /><div><button type="button" className="text-button" onClick={onClose}>取消</button><button className="primary-button" disabled={busy || backupBusy}>{busy ? "保存中…" : "保存设置"}</button></div></footer>
         </form>
       </section>
     </div>
@@ -647,7 +715,7 @@ function App() {
       </main>
 
       {editorTask !== undefined && <TaskEditor task={editorTask} projects={data.projects} allTasks={data.tasks} defaultProjectId={currentProjectId} onClose={() => setEditorTask(undefined)} onSaved={async () => { setEditorTask(undefined); await refresh(); setToast("任务已保存"); }} onDeleted={async () => { setEditorTask(undefined); await refresh(); setToast("任务已删除"); }} />}
-      {settingsOpen && <SettingsDialog settings={data.settings} onClose={() => setSettingsOpen(false)} onSaved={async () => { setSettingsOpen(false); await refresh(); setToast("设置已保存"); }} />}
+      {settingsOpen && <SettingsDialog settings={data.settings} onClose={() => setSettingsOpen(false)} onSaved={async (message) => { setSettingsOpen(false); await refresh(); setToast(message ?? "设置已保存"); }} />}
       {projectOpen && <ProjectDialog onClose={() => setProjectOpen(false)} onSaved={async () => { setProjectOpen(false); await refresh(); setToast("项目已创建"); }} />}
       {toast && <div className="toast"><Check size={16} />{toast}</div>}
     </div>
