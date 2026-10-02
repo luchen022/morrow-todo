@@ -1,0 +1,12 @@
+{
+  "name": "Morrow Todo",
+  "short_name": "Morrow",
+  "description": "安静、可靠、属于你的任务管理工具",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#f7f5ef",
+  "theme_color": "#f7f5ef",
+  "icons": [
+    { "src": "/favicon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}
