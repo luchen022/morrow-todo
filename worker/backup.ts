@@ -71,7 +71,7 @@ export async function exportBackup(db: D1Database): Promise<Backup> {
 }
 
 export async function restoreBackup(db: D1Database, backup: Backup): Promise<void> {
-  const statements = ["task_tags", "notifications", "tasks", "tags", "projects", "settings"].map((table) => db.prepare(`DELETE FROM ${table}`));
+  const statements = ["task_undo", "task_tags", "notifications", "tasks", "tags", "projects", "settings"].map((table) => db.prepare(`DELETE FROM ${table}`));
   for (const table of Object.keys(tables) as Table[]) {
     const columns = Object.keys(tables[table]);
     // One INSERT per table keeps restoration within the Free plan's query

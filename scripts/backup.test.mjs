@@ -7,6 +7,7 @@ import { exportBackup, validateBackup, restoreBackup, readBackup, MAX_BACKUP_BYT
 function database() {
   const sqlite = new DatabaseSync(":memory:");
   sqlite.exec(readFileSync(new URL("../migrations/0001_initial.sql", import.meta.url), "utf8"));
+  sqlite.exec(readFileSync(new URL("../migrations/0002_task_undo.sql", import.meta.url), "utf8"));
   const adapter = {
     prepare(sql) { return { sql, values: [], bind(...values) { this.values = values; return this; } }; },
     async batch(statements) {

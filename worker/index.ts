@@ -1,5 +1,6 @@
 import { Resend } from "resend";
 import { MAX_BACKUP_BYTES, backupCounts, exportBackup, readBackup, restoreBackup, validateBackup } from "./backup";
+import { deleteTaskWithUndo, toggleTaskWithUndo, undoTaskAction } from "./undo";
 
 type JsonValue = string | number | boolean | null | JsonValue[] | { [key: string]: JsonValue };
 
@@ -410,8 +411,7 @@ async function updateTask(request: Request, env: Env, id: string): Promise<Respo
 }
 
 async function deleteTask(env: Env, id: string): Promise<Response> {
-  await env.DB.prepare("DELETE FROM tasks WHERE id = ?").bind(id).run();
-  return json({ ok: true });
+  return json({ ok: true, ...await deleteTaskWithUndo(env.DB, id) });
 }
 
 async function updateSettings(request: Request, env: Env): Promise<Response> {
@@ -584,6 +584,15 @@ async function api(request: Request, env: Env): Promise<Response> {
     if (request.method === "DELETE") return deleteProject(env, id);
   }
   if (path === "/api/tasks" && request.method === "POST") return createTask(request, env);
+  if (path === "/api/undo" && request.method === "POST") {
+    const body = await readBody(request);
+    try { await undoTaskAction(env.DB, textValue(body.token, 80)); }
+    catch (cause) { return error(cause instanceof Error ? cause.message : "无法撤销", 409); }
+    return json({ ok: true });
+  }
+  if (path.startsWith("/api/tasks/") && path.endsWith("/toggle") && request.method === "POST") {
+    return json(await toggleTaskWithUndo(env.DB, decodeURIComponent(path.slice("/api/tasks/".length, -"/toggle".length))));
+  }
   if (path.startsWith("/api/tasks/")) {
     const id = decodeURIComponent(path.slice("/api/tasks/".length));
     if (request.method === "PUT") return updateTask(request, env, id);

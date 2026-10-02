@@ -81,6 +81,7 @@ type Bootstrap = {
 };
 
 type View = "inbox" | "today" | "upcoming" | "completed" | `project:${string}`;
+type UndoResult = { undoToken: string; expiresAt: number };
 
 const priorityLabels = ["无", "低", "中", "高", "紧急"];
 const recurrenceLabels: Record<string, string> = {
@@ -197,7 +198,7 @@ function TaskEditor({
   defaultProjectId: string;
   onClose: () => void;
   onSaved: () => void;
-  onDeleted: () => void;
+  onDeleted: (undo: UndoResult) => void;
 }) {
   const [title, setTitle] = useState(task?.title ?? "");
   const [description, setDescription] = useState(task?.description ?? "");
@@ -241,11 +242,11 @@ function TaskEditor({
   }
 
   async function remove() {
-    if (!task || !window.confirm("删除这项任务？此操作无法撤销。")) return;
+    if (!task || !window.confirm("删除这项任务及其子任务？删除后可在 15 秒内撤销。")) return;
     setBusy(true);
     try {
-      await api(`/api/tasks/${task.id}`, { method: "DELETE" });
-      onDeleted();
+      const undo = await api<UndoResult>(`/api/tasks/${task.id}`, { method: "DELETE" });
+      onDeleted(undo);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "删除失败");
       setBusy(false);
@@ -523,6 +524,8 @@ function App() {
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [toast, setToast] = useState("");
+  const [undo, setUndo] = useState<(UndoResult & { message: string }) | null>(null);
+  const [undoBusy, setUndoBusy] = useState(false);
   const quickRef = useRef<HTMLInputElement>(null);
 
   async function checkAuth() {
@@ -550,6 +553,11 @@ function App() {
     const timer = window.setTimeout(() => setToast(""), 2800);
     return () => window.clearTimeout(timer);
   }, [toast]);
+  useEffect(() => {
+    if (!undo) return;
+    const timer = window.setTimeout(() => setUndo((current) => current?.undoToken === undo.undoToken ? null : current), 15_000);
+    return () => window.clearTimeout(timer);
+  }, [undo]);
 
   const currentProjectId = view.startsWith("project:") ? view.slice(8) : "inbox";
   const currentProject = data?.projects.find((item) => item.id === currentProjectId);
@@ -595,9 +603,9 @@ function App() {
 
   async function toggleTask(task: Task) {
     try {
-      await api(`/api/tasks/${task.id}`, { method: "PUT", body: JSON.stringify({ status: task.status === "done" ? "open" : "done" }) });
+      const result = await api<UndoResult>(`/api/tasks/${task.id}/toggle`, { method: "POST" });
+      setUndo({ ...result, message: task.status === "open" ? (task.recurrenceRule ? "已完成，并创建了下一次任务" : "任务已完成") : "任务已重新打开" });
       await refresh();
-      if (task.status === "open") setToast(task.recurrenceRule ? "已完成，并创建了下一次任务" : "做得好，已经完成");
     } catch (cause) {
       setToast(cause instanceof Error ? cause.message : "更新失败");
     }
@@ -612,12 +620,27 @@ function App() {
     await api("/api/auth/logout", { method: "POST" });
     setData(null);
     setLoadError("");
+    setUndo(null);
     setAuthState("guest");
   }
 
   function changeView(next: View) {
     setView(next);
     setSidebarOpen(false);
+  }
+
+  async function undoLastAction() {
+    if (!undo || undoBusy) return;
+    const token = undo.undoToken;
+    setUndoBusy(true);
+    try {
+      await api("/api/undo", { method: "POST", body: JSON.stringify({ token }) });
+      setUndo((current) => current?.undoToken === token ? null : current);
+      await refresh();
+      setToast("已撤销，任务已恢复");
+    } catch (cause) {
+      setToast(cause instanceof Error ? cause.message : "撤销失败，请重试");
+    } finally { setUndoBusy(false); }
   }
 
   if (authState === "loading") return <div className="app-loader"><div className="brand-mark"><Check size={24} /></div><span>正在准备今天…</span></div>;
@@ -714,10 +737,11 @@ function App() {
         </div>
       </main>
 
-      {editorTask !== undefined && <TaskEditor task={editorTask} projects={data.projects} allTasks={data.tasks} defaultProjectId={currentProjectId} onClose={() => setEditorTask(undefined)} onSaved={async () => { setEditorTask(undefined); await refresh(); setToast("任务已保存"); }} onDeleted={async () => { setEditorTask(undefined); await refresh(); setToast("任务已删除"); }} />}
+      {editorTask !== undefined && <TaskEditor task={editorTask} projects={data.projects} allTasks={data.tasks} defaultProjectId={currentProjectId} onClose={() => setEditorTask(undefined)} onSaved={async () => { setEditorTask(undefined); await refresh(); setToast("任务已保存"); }} onDeleted={async (result) => { setEditorTask(undefined); setUndo({ ...result, message: "任务已删除（包含子任务）" }); await refresh(); }} />}
       {settingsOpen && <SettingsDialog settings={data.settings} onClose={() => setSettingsOpen(false)} onSaved={async (message) => { setSettingsOpen(false); await refresh(); setToast(message ?? "设置已保存"); }} />}
       {projectOpen && <ProjectDialog onClose={() => setProjectOpen(false)} onSaved={async () => { setProjectOpen(false); await refresh(); setToast("项目已创建"); }} />}
       {toast && <div className="toast"><Check size={16} />{toast}</div>}
+      {undo && <div className="toast undo-toast" role="status"><span>{undo.message}</span><button disabled={undoBusy} onClick={undoLastAction}>{undoBusy ? "恢复中…" : "撤销"}</button><button className="undo-dismiss" aria-label="关闭撤销提示" onClick={() => setUndo(null)}><X size={16} /></button></div>}
     </div>
   );
 }
