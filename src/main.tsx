@@ -523,6 +523,7 @@ function App() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [projectOpen, setProjectOpen] = useState(false);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
+  const [notificationBusy, setNotificationBusy] = useState<string | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [toast, setToast] = useState("");
   const [undo, setUndo] = useState<(UndoResult & { message: string }) | null>(null);
@@ -613,9 +614,15 @@ function App() {
     }
   }
 
-  async function markNotificationsRead() {
-    await api("/api/notifications/read", { method: "POST" });
-    await refresh();
+  async function markNotificationsRead(id?: string) {
+    if (notificationBusy) return;
+    setNotificationBusy(id ?? "all");
+    try {
+      await api(id ? `/api/notifications/${encodeURIComponent(id)}/read` : "/api/notifications/read", { method: "POST" });
+      await refresh();
+    } catch (cause) {
+      setToast(cause instanceof Error ? cause.message : "无法标记已读，请重试");
+    } finally { setNotificationBusy(null); }
   }
 
   async function logout() {
@@ -695,10 +702,10 @@ function App() {
               <button className="icon-button notification-button" onClick={() => setNotificationsOpen((open) => !open)} aria-label="通知"><Bell size={20} />{unread > 0 && <i>{unread}</i>}</button>
               {notificationsOpen && (
                 <div className="notifications-popover">
-                  <header><div><p className="eyebrow">NOTIFICATIONS</p><h3>提醒</h3></div>{unread > 0 && <button onClick={markNotificationsRead}>全部已读</button>}</header>
+                  <header><div><p className="eyebrow">NOTIFICATIONS</p><h3>提醒</h3></div>{unread > 0 && <button disabled={notificationBusy !== null} onClick={() => markNotificationsRead()}>{notificationBusy === "all" ? "处理中…" : "全部已读"}</button>}</header>
                   <div className="notification-list">
                     {data.notifications.length === 0 ? <div className="empty-notifications"><Bell size={24} /><p>还没有新的提醒</p></div> : data.notifications.map((item) => (
-                      <article key={item.id} className={!item.read_at ? "unread" : ""}><span /><div><strong>{item.body}</strong><p>{new Date(item.created_at).toLocaleString("zh-CN")}</p></div></article>
+                      <article key={item.id} className={!item.read_at ? "unread" : ""}><span /><div className="notification-content"><strong>{item.body}</strong><div className="notification-meta"><p>{new Date(item.created_at).toLocaleString("zh-CN")}</p>{!item.read_at ? <button disabled={notificationBusy !== null} onClick={() => markNotificationsRead(item.id)} aria-label={`标为已读：${item.body}`}>{notificationBusy === item.id ? "处理中…" : "标为已读"}</button> : <small>已读</small>}</div></div></article>
                     ))}
                   </div>
                 </div>

@@ -602,6 +602,12 @@ async function api(request: Request, env: Env): Promise<Response> {
     await env.DB.prepare("UPDATE notifications SET read_at = ? WHERE read_at IS NULL").bind(isoNow()).run();
     return json({ ok: true });
   }
+  if (path.startsWith("/api/notifications/") && path.endsWith("/read") && request.method === "POST") {
+    const id = decodeURIComponent(path.slice("/api/notifications/".length, -"/read".length));
+    const notification = await env.DB.prepare("UPDATE notifications SET read_at = COALESCE(read_at, ?) WHERE id = ? RETURNING id")
+      .bind(isoNow(), id).first<{ id: string }>();
+    return notification ? json({ ok: true }) : error("提醒不存在", 404);
+  }
   if (path === "/api/settings" && request.method === "PUT") return updateSettings(request, env);
   if (path === "/api/settings/test-email" && request.method === "POST") return testEmail(env);
   return error("接口不存在", 404);
