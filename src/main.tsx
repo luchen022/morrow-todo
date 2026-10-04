@@ -572,13 +572,13 @@ function App() {
     return data.tasks.filter((task) => {
       if (query && !`${task.title} ${task.description} ${task.tags.join(" ")}`.toLocaleLowerCase().includes(query)) return false;
       if (view === "completed") return task.status === "done";
-      if (task.status === "done") return false;
       if (view === "inbox") return task.projectId === "inbox";
+      if (view.startsWith("project:")) return task.projectId === view.slice(8);
+      if (task.status === "done") return false;
       if (view === "today") return Boolean(task.dueAt && new Date(task.dueAt) <= new Date(`${dayKey(now)}T23:59:59`));
       if (view === "upcoming") return Boolean(task.dueAt && new Date(task.dueAt) > now && new Date(task.dueAt) <= end);
-      if (view.startsWith("project:")) return task.projectId === view.slice(8);
       return true;
-    });
+    }).sort((a, b) => Number(a.status === "done") - Number(b.status === "done"));
   }, [data, view, search]);
 
   const viewInfo = useMemo(() => {
